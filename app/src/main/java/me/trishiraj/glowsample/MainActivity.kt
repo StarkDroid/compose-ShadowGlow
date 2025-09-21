@@ -44,7 +44,7 @@ fun DropShadowDemoScreen(modifier: Modifier = Modifier) {
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(42.dp, Alignment.CenterVertically),
+        verticalArrangement = Arrangement.spacedBy(32.dp, Alignment.CenterVertically), // Adjusted spacing
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(
@@ -81,11 +81,12 @@ fun DropShadowDemoScreen(modifier: Modifier = Modifier) {
                     spread = 6.dp,
                     blurStyle = ShadowBlurStyle.INNER
                 )
+                .background(Color.White)
                 .padding(16.dp)
         )
 
         Text(
-            text = "Gradient Drop Shadow (Inner Blur)",
+            text = "Gradient Drop Shadow (Outer Blur)",
             modifier = Modifier
                 .dropShadow(
                     gradientColors = listOf(Color.Red.copy(alpha = 0.7f), Color.Blue.copy(alpha = 0.7f)),
@@ -101,6 +102,25 @@ fun DropShadowDemoScreen(modifier: Modifier = Modifier) {
                     alpha = 1f,
                     blurStyle = ShadowBlurStyle.OUTER
                 )
+                .background(Color.White)
+                .padding(16.dp)
+        )
+
+        Text(
+            text = "Gyro Parallax Shadow (Tilt Device)",
+            modifier = Modifier
+                .dropShadow(
+                    color = Color.Green.copy(alpha = 0.6f),
+                    borderRadius = 8.dp,
+                    blurRadius = 10.dp,
+                    offsetX = 0.dp,
+                    offsetY = 0.dp,
+                    spread = 1.dp,
+                    blurStyle = ShadowBlurStyle.NORMAL,
+                    enableGyroParallax = true,
+                    parallaxSensitivity = 8.dp
+                )
+                .background(Color.White)
                 .padding(16.dp)
         )
     }

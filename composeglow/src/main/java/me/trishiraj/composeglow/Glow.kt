@@ -1,10 +1,22 @@
 package me.trishiraj.composeglow
 
+import android.content.Context
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.graphics.BlurMaskFilter
 import android.graphics.Paint as AndroidPaint
 import android.graphics.Shader as AndroidShader
 import android.graphics.LinearGradient as AndroidLinearGradient
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.DisposableEffectResult
+import androidx.compose.runtime.State
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TileMode
@@ -12,26 +24,20 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import kotlin.math.sin
 
 /**
  * Defines the style of the blur effect for the shadow, corresponding to `BlurMaskFilter.Blur`.
  */
 enum class ShadowBlurStyle {
-    /** Normal blur, feathering the edges of the shadow. */
-    NORMAL,
-    /** Solidify the shadow silhouette, with no feathering. */
-    SOLID,
-    /** Blur only the outer edge of the shadow. */
-    OUTER,
-    /** Blur only the inner edge of the shadow. */
-    INNER
+    NORMAL, SOLID, OUTER, INNER
 }
 
-/**
- * Converts [ShadowBlurStyle] to the Android-specific `BlurMaskFilter.Blur`.
- */
+/** Converts [ShadowBlurStyle] to the Android-specific `BlurMaskFilter.Blur`. */
 internal fun ShadowBlurStyle.toAndroidBlurStyle(): BlurMaskFilter.Blur {
     return when (this) {
         ShadowBlurStyle.NORMAL -> BlurMaskFilter.Blur.NORMAL
@@ -46,11 +52,13 @@ internal fun ShadowBlurStyle.toAndroidBlurStyle(): BlurMaskFilter.Blur {
  *
  * @param color The color of the shadow.
  * @param borderRadius The radius of the shadow's corners.
- * @param blurRadius The blur radius of the shadow. A larger value creates a softer, more dispersed shadow.
- * @param offsetX The horizontal offset of the shadow. Positive values shift the shadow to the right.
- * @param offsetY The vertical offset of the shadow. Positive values shift the shadow downwards.
- * @param spread The amount to expand the shadow's bounds before blurring. Positive values make the shadow larger.
- * @param blurStyle The style of the blur effect (Normal, Solid, Outer, Inner).
+ * @param blurRadius The blur radius of the shadow.
+ * @param offsetX The static horizontal offset of the shadow.
+ * @param offsetY The static vertical offset of the shadow.
+ * @param spread The amount to expand the shadow's bounds before blurring.
+ * @param blurStyle The style of the blur effect.
+ * @param enableGyroParallax If true, enables a parallax effect on the shadow based on device orientation.
+ * @param parallaxSensitivity The maximum displacement for the gyroscope-driven parallax effect.
  * @return A [Modifier] that applies the drop shadow effect.
  */
 fun Modifier.dropShadow(
@@ -60,59 +68,50 @@ fun Modifier.dropShadow(
     offsetX: Dp = 0.dp,
     offsetY: Dp = 4.dp,
     spread: Dp = 0.dp,
-    blurStyle: ShadowBlurStyle = ShadowBlurStyle.NORMAL
-): Modifier = this.then(
-    Modifier.drawBehind {
-        val spreadPx = spread.toPx()
-        val blurRadiusPx = blurRadius.toPx()
-        val offsetXPx = offsetX.toPx()
-        val offsetYPx = offsetY.toPx()
-        val shadowBorderRadiusPx = borderRadius.toPx()
+    blurStyle: ShadowBlurStyle = ShadowBlurStyle.NORMAL,
+    enableGyroParallax: Boolean = false,
+    parallaxSensitivity: Dp = 4.dp
+): Modifier = composed {
+    val parallaxOffset = if (enableGyroParallax) rememberGyroParallaxOffset(parallaxSensitivity) else null
 
-        val shadowColorArgb = color.toArgb()
+    this.then(
+        Modifier.drawBehind {
+            val spreadPx = spread.toPx()
+            val blurRadiusPx = blurRadius.toPx()
+            val baseOffsetXPx = offsetX.toPx()
+            val baseOffsetYPx = offsetY.toPx()
+            val shadowBorderRadiusPx = borderRadius.toPx()
 
-        // Early exit if the shadow would be completely invisible
-        if (color.alpha == 0f && blurRadiusPx == 0f && spreadPx == 0f && offsetXPx == 0f && offsetYPx == 0f) {
-            return@drawBehind
-        }
+            val totalOffsetXPx = baseOffsetXPx + (parallaxOffset?.value?.first ?: 0f)
+            val totalOffsetYPx = baseOffsetYPx + (parallaxOffset?.value?.second ?: 0f)
 
-        val frameworkPaint = AndroidPaint().apply {
-            isAntiAlias = true
-            style = AndroidPaint.Style.FILL
-            this.color = shadowColorArgb
+            val shadowColorArgb = color.toArgb()
 
-            if (blurRadiusPx > 0f) {
-                maskFilter = BlurMaskFilter(blurRadiusPx, blurStyle.toAndroidBlurStyle())
+            if (color.alpha == 0f && blurRadiusPx == 0f && spreadPx == 0f && totalOffsetXPx == baseOffsetXPx && totalOffsetYPx == baseOffsetYPx) {
+                return@drawBehind
             }
+
+            val frameworkPaint = AndroidPaint().apply {
+                isAntiAlias = true
+                style = AndroidPaint.Style.FILL
+                this.color = shadowColorArgb
+                if (blurRadiusPx > 0f) {
+                    maskFilter = BlurMaskFilter(blurRadiusPx, blurStyle.toAndroidBlurStyle())
+                }
+            }
+            val left = -spreadPx + totalOffsetXPx
+            val top = -spreadPx + totalOffsetYPx
+            val right = size.width + spreadPx + totalOffsetXPx
+            val bottom = size.height + spreadPx + totalOffsetYPx
+
+            drawShadowShape(left, top, right, bottom, shadowBorderRadiusPx, frameworkPaint)
         }
-
-        val left = -spreadPx + offsetXPx
-        val top = -spreadPx + offsetYPx
-        val right = size.width + spreadPx + offsetXPx
-        val bottom = size.height + spreadPx + offsetYPx
-
-        drawShadowShape(left, top, right, bottom, shadowBorderRadiusPx, frameworkPaint)
-    }
-)
+    )
+}
 
 /**
  * Applies a drop shadow effect to the composable using a linear gradient.
- *
- * @param gradientColors The list of colors for the linear gradient shadow.
- * @param gradientStartFactorX The starting X-coordinate factor (0.0 to 1.0) for the gradient, relative to the composable's width.
- * @param gradientStartFactorY The starting Y-coordinate factor (0.0 to 1.0) for the gradient, relative to the composable's height.
- * @param gradientEndFactorX The ending X-coordinate factor (0.0 to 1.0) for the gradient, relative to the composable's width.
- * @param gradientEndFactorY The ending Y-coordinate factor (0.0 to 1.0) for the gradient, relative to the composable's height.
- * @param gradientColorStops Optional list of color stops for the gradient (0.0 to 1.0).
- * @param gradientTileMode The tile mode for the gradient shader.
- * @param borderRadius The radius of the shadow's corners.
- * @param blurRadius The blur radius of the shadow.
- * @param offsetX The horizontal offset of the shadow.
- * @param offsetY The vertical offset of the shadow.
- * @param spread The amount to expand the shadow's bounds before blurring.
- * @param alpha The overall alpha transparency for the gradient shadow (0.0 to 1.0).
- * @param blurStyle The style of the blur effect (Normal, Solid, Outer, Inner).
- * @return A [Modifier] that applies the gradient drop shadow effect.
+ * (Gyro parallax parameters documented as above)
  */
 fun Modifier.dropShadow(
     gradientColors: List<Color>,
@@ -128,78 +127,124 @@ fun Modifier.dropShadow(
     offsetY: Dp = 4.dp,
     spread: Dp = 0.dp,
     alpha: Float = 1.0f,
-    blurStyle: ShadowBlurStyle = ShadowBlurStyle.NORMAL
-): Modifier = this.then(
-    Modifier.drawBehind {
-        // Early exit if no gradient colors are provided or if shadow is fully transparent
-        if (gradientColors.isEmpty() || alpha == 0f) {
-            return@drawBehind
+    blurStyle: ShadowBlurStyle = ShadowBlurStyle.NORMAL,
+    enableGyroParallax: Boolean = false,
+    parallaxSensitivity: Dp = 4.dp
+): Modifier = composed {
+    val parallaxOffset = if (enableGyroParallax) rememberGyroParallaxOffset(parallaxSensitivity) else null
+
+    this.then(
+        Modifier.drawBehind {
+            if (gradientColors.isEmpty() || alpha == 0f) {
+                return@drawBehind
+            }
+            val spreadPx = spread.toPx()
+            val blurRadiusPx = blurRadius.toPx()
+            val baseOffsetXPx = offsetX.toPx()
+            val baseOffsetYPx = offsetY.toPx()
+            val shadowBorderRadiusPx = borderRadius.toPx()
+
+            val totalOffsetXPx = baseOffsetXPx + (parallaxOffset?.value?.first ?: 0f)
+            val totalOffsetYPx = baseOffsetYPx + (parallaxOffset?.value?.second ?: 0f)
+
+            val actualStartX = gradientStartFactorX * size.width
+            val actualStartY = gradientStartFactorY * size.height
+            val actualEndX = gradientEndFactorX * size.width
+            val actualEndY = gradientEndFactorY * size.height
+
+            val frameworkPaint = AndroidPaint().apply {
+                isAntiAlias = true
+                style = AndroidPaint.Style.FILL
+                this.alpha = (alpha.coerceIn(0f, 1f) * 255).toInt()
+                shader = AndroidLinearGradient(
+                    actualStartX, actualStartY, actualEndX, actualEndY,
+                    gradientColors.map { it.toArgb() }.toIntArray(),
+                    gradientColorStops?.toFloatArray(),
+                    gradientTileMode.toAndroidTileMode()
+                )
+                if (blurRadiusPx > 0f) {
+                    maskFilter = BlurMaskFilter(blurRadiusPx, blurStyle.toAndroidBlurStyle())
+                }
+            }
+            val left = -spreadPx + totalOffsetXPx
+            val top = -spreadPx + totalOffsetYPx
+            val right = size.width + spreadPx + totalOffsetXPx
+            val bottom = size.height + spreadPx + totalOffsetYPx
+
+            drawShadowShape(left, top, right, bottom, shadowBorderRadiusPx, frameworkPaint)
         }
+    )
+}
 
-        val spreadPx = spread.toPx()
-        val blurRadiusPx = blurRadius.toPx()
-        val offsetXPx = offsetX.toPx()
-        val offsetYPx = offsetY.toPx()
-        val shadowBorderRadiusPx = borderRadius.toPx()
+@Composable
+private fun rememberGyroParallaxOffset(sensitivity: Dp): State<Pair<Float, Float>> {
+    val context = LocalContext.current
+    val density = LocalDensity.current
+    val sensitivityPx = remember(sensitivity) { with(density) { sensitivity.toPx() } }
 
-        val actualStartX = gradientStartFactorX * size.width
-        val actualStartY = gradientStartFactorY * size.height
-        val actualEndX = gradientEndFactorX * size.width
-        val actualEndY = gradientEndFactorY * size.height
+    val parallaxOffset = remember {
+        mutableStateOf(0f to 0f) // Pair<offsetX, offsetY>
+    }
 
-        val frameworkPaint = AndroidPaint().apply {
-            isAntiAlias = true
-            style = AndroidPaint.Style.FILL
-            this.alpha = (alpha.coerceIn(0f, 1f) * 255).toInt()
+    DisposableEffect(context, sensitivityPx) {
+        val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
+        val rotationSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
 
-            shader = AndroidLinearGradient(
-                actualStartX,
-                actualStartY,
-                actualEndX,
-                actualEndY,
-                gradientColors.map { it.toArgb() }.toIntArray(),
-                gradientColorStops?.toFloatArray(),
-                gradientTileMode.toAndroidTileMode()
-            )
+        if (rotationSensor == null) {
+            onDispose {
+                object : DisposableEffectResult {
+                    override fun dispose() {}
+                }
+            }
+            // return@DisposableEffect is not strictly needed here if onDispose is the last statement,
+            // but kept for clarity that no further setup for this effect will occur.
+            // However, the above onDispose block already correctly returns DisposableEffectResult.
+        } else {
+            val sensorListener = object : SensorEventListener {
+                private val rotationMatrix = FloatArray(9)
+                private val orientationAngles = FloatArray(3)
 
-            if (blurRadiusPx > 0f) {
-                maskFilter = BlurMaskFilter(blurRadiusPx, blurStyle.toAndroidBlurStyle())
+                override fun onSensorChanged(event: SensorEvent?) {
+                    if (event?.sensor?.type == Sensor.TYPE_ROTATION_VECTOR) {
+                        SensorManager.getRotationMatrixFromVector(rotationMatrix, event.values)
+                        SensorManager.getOrientation(rotationMatrix, orientationAngles)
+
+                        val roll = orientationAngles[2]
+                        val pitch = orientationAngles[1]
+
+                        val newOffsetX = -sin(roll) * sensitivityPx
+                        val newOffsetY = sin(pitch) * sensitivityPx
+                        parallaxOffset.value = newOffsetX to newOffsetY
+                    }
+                }
+                override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+            }
+
+            sensorManager.registerListener(sensorListener, rotationSensor, SensorManager.SENSOR_DELAY_UI)
+
+            onDispose {
+                sensorManager.unregisterListener(sensorListener)
+                parallaxOffset.value = 0f to 0f
+                object : DisposableEffectResult {
+                    override fun dispose() {}
+                }
             }
         }
-
-        val left = -spreadPx + offsetXPx
-        val top = -spreadPx + offsetYPx
-        val right = size.width + spreadPx + offsetXPx
-        val bottom = size.height + spreadPx + offsetYPx
-
-        drawShadowShape(left, top, right, bottom, shadowBorderRadiusPx, frameworkPaint)
     }
-)
+    return parallaxOffset
+}
 
-/**
- * Private helper to perform the actual drawing of the shadow shape (rounded rectangle).
- */
-private fun DrawScope.drawShadowShape(
-    left: Float,
-    top: Float,
-    right: Float,
-    bottom: Float,
-    cornerRadiusPx: Float,
-    paint: AndroidPaint
-) {
+private fun DrawScope.drawShadowShape(left: Float, top: Float, right: Float, bottom: Float, cornerRadiusPx: Float, paint: AndroidPaint) {
     drawIntoCanvas { canvas ->
         canvas.nativeCanvas.drawRoundRect(left, top, right, bottom, cornerRadiusPx, cornerRadiusPx, paint)
     }
 }
 
-/**
- * Converts Compose [TileMode] to Android-specific `Shader.TileMode`.
- */
 private fun TileMode.toAndroidTileMode(): AndroidShader.TileMode {
     return when (this) {
         TileMode.Clamp -> AndroidShader.TileMode.CLAMP
         TileMode.Repeated -> AndroidShader.TileMode.REPEAT
         TileMode.Mirror -> AndroidShader.TileMode.MIRROR
-        else -> AndroidShader.TileMode.CLAMP // Default for TileMode.Decal or others
+        else -> AndroidShader.TileMode.CLAMP
     }
 }
