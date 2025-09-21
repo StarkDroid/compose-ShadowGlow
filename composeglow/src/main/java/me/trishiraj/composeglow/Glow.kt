@@ -1,20 +1,15 @@
 package me.trishiraj.composeglow
 
 import android.content.Context
+import android.graphics.BlurMaskFilter
+import android.graphics.LinearGradient as AndroidLinearGradient
+import android.graphics.Paint as AndroidPaint
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
-import android.graphics.BlurMaskFilter
-import android.graphics.Paint as AndroidPaint
-import android.graphics.Shader as AndroidShader
-import android.graphics.LinearGradient as AndroidLinearGradient
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.DisposableEffectResult
-import androidx.compose.runtime.State
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.animation.core.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.drawBehind
@@ -22,8 +17,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toAndroidTileMode
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
@@ -47,18 +43,46 @@ internal fun ShadowBlurStyle.toAndroidBlurStyle(): BlurMaskFilter.Blur {
     }
 }
 
+@Composable
+private fun rememberAnimatedBreathingValue(
+    enabled: Boolean,
+    intensity: Dp,
+    durationMillis: Int
+): State<Float> {
+    val density = LocalDensity.current
+    val intensityPx = remember(intensity) { with(density) { intensity.toPx() } }
+
+    if (!enabled || intensityPx <= 0f || durationMillis <= 0) {
+        return remember { mutableFloatStateOf(0f) }
+    }
+
+    val infiniteTransition = rememberInfiniteTransition(label = "breathingEffect")
+    return infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = intensityPx,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = durationMillis, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "breathingValue"
+    )
+}
+
 /**
  * Applies a drop shadow effect to the composable using a solid color.
  *
  * @param color The color of the shadow.
  * @param borderRadius The radius of the shadow's corners.
- * @param blurRadius The blur radius of the shadow.
+ * @param blurRadius The base blur radius of the shadow.
  * @param offsetX The static horizontal offset of the shadow.
  * @param offsetY The static vertical offset of the shadow.
  * @param spread The amount to expand the shadow's bounds before blurring.
  * @param blurStyle The style of the blur effect.
  * @param enableGyroParallax If true, enables a parallax effect on the shadow based on device orientation.
  * @param parallaxSensitivity The maximum displacement for the gyroscope-driven parallax effect.
+ * @param enableBreathingEffect If true, enables a breathing (pulsating) animation on the shadow's blur radius.
+ * @param breathingEffectIntensity The maximum additional blur radius applied during the breathing animation.
+ * @param breathingDurationMillis The duration for one full cycle of the breathing animation.
  * @return A [Modifier] that applies the drop shadow effect.
  */
 fun Modifier.dropShadow(
@@ -70,14 +94,25 @@ fun Modifier.dropShadow(
     spread: Dp = 0.dp,
     blurStyle: ShadowBlurStyle = ShadowBlurStyle.NORMAL,
     enableGyroParallax: Boolean = false,
-    parallaxSensitivity: Dp = 4.dp
+    parallaxSensitivity: Dp = 4.dp,
+    enableBreathingEffect: Boolean = false,
+    breathingEffectIntensity: Dp = 4.dp,
+    breathingDurationMillis: Int = 1500
 ): Modifier = composed {
     val parallaxState = if (enableGyroParallax) rememberGyroParallaxState(parallaxSensitivity) else null
+    val animatedBreathingValuePx = rememberAnimatedBreathingValue(
+        enabled = enableBreathingEffect,
+        intensity = breathingEffectIntensity,
+        durationMillis = breathingDurationMillis
+    )
 
     this.then(
         Modifier.drawBehind {
             val spreadPx = spread.toPx()
-            val blurRadiusPx = blurRadius.toPx()
+            val baseBlurRadiusPx = blurRadius.toPx()
+            val currentAnimatedBlurPx = animatedBreathingValuePx.value
+            val totalBlurRadiusPx = (baseBlurRadiusPx + currentAnimatedBlurPx).coerceAtLeast(0f)
+
             val baseOffsetXPx = offsetX.toPx()
             val baseOffsetYPx = offsetY.toPx()
             val shadowBorderRadiusPx = borderRadius.toPx()
@@ -90,7 +125,7 @@ fun Modifier.dropShadow(
 
             val shadowColorArgb = color.toArgb()
 
-            if (color.alpha == 0f && blurRadiusPx == 0f && spreadPx == 0f && dynamicOffsetXPx == 0f && dynamicOffsetYPx == 0f && baseOffsetXPx == 0f && baseOffsetYPx == 0f) {
+            if (color.alpha == 0f && totalBlurRadiusPx <= 0f && spreadPx == 0f && dynamicOffsetXPx == 0f && dynamicOffsetYPx == 0f && baseOffsetXPx == 0f && baseOffsetYPx == 0f) {
                 return@drawBehind
             }
 
@@ -98,8 +133,8 @@ fun Modifier.dropShadow(
                 isAntiAlias = true
                 style = AndroidPaint.Style.FILL
                 this.color = shadowColorArgb
-                if (blurRadiusPx > 0f) {
-                    maskFilter = BlurMaskFilter(blurRadiusPx, blurStyle.toAndroidBlurStyle())
+                if (totalBlurRadiusPx > 0f) {
+                    maskFilter = BlurMaskFilter(totalBlurRadiusPx, blurStyle.toAndroidBlurStyle())
                 }
             }
             val left = -spreadPx + totalOffsetXPx
@@ -114,7 +149,7 @@ fun Modifier.dropShadow(
 
 /**
  * Applies a drop shadow effect to the composable using a linear gradient.
- * (Gyro parallax parameters documented as above)
+ * (Gyro parallax and breathing effect parameters documented as above)
  */
 fun Modifier.dropShadow(
     gradientColors: List<Color>,
@@ -123,7 +158,6 @@ fun Modifier.dropShadow(
     gradientEndFactorX: Float = 1f,
     gradientEndFactorY: Float = 1f,
     gradientColorStops: List<Float>? = null,
-    gradientTileMode: TileMode = TileMode.Clamp,
     borderRadius: Dp = 0.dp,
     blurRadius: Dp = 8.dp,
     offsetX: Dp = 0.dp,
@@ -132,9 +166,17 @@ fun Modifier.dropShadow(
     alpha: Float = 1.0f,
     blurStyle: ShadowBlurStyle = ShadowBlurStyle.NORMAL,
     enableGyroParallax: Boolean = false,
-    parallaxSensitivity: Dp = 4.dp
+    parallaxSensitivity: Dp = 4.dp,
+    enableBreathingEffect: Boolean = false,
+    breathingEffectIntensity: Dp = 4.dp,
+    breathingDurationMillis: Int = 1500
 ): Modifier = composed {
     val parallaxState = if (enableGyroParallax) rememberGyroParallaxState(parallaxSensitivity) else null
+    val animatedBreathingValuePx = rememberAnimatedBreathingValue(
+        enabled = enableBreathingEffect,
+        intensity = breathingEffectIntensity,
+        durationMillis = breathingDurationMillis
+    )
 
     this.then(
         Modifier.drawBehind {
@@ -142,7 +184,10 @@ fun Modifier.dropShadow(
                 return@drawBehind
             }
             val spreadPx = spread.toPx()
-            val blurRadiusPx = blurRadius.toPx()
+            val baseBlurRadiusPx = blurRadius.toPx()
+            val currentAnimatedBlurPx = animatedBreathingValuePx.value
+            val totalBlurRadiusPx = (baseBlurRadiusPx + currentAnimatedBlurPx).coerceAtLeast(0f)
+            
             val baseOffsetXPx = offsetX.toPx()
             val baseOffsetYPx = offsetY.toPx()
             val shadowBorderRadiusPx = borderRadius.toPx()
@@ -166,10 +211,10 @@ fun Modifier.dropShadow(
                     actualStartX, actualStartY, actualEndX, actualEndY,
                     gradientColors.map { it.toArgb() }.toIntArray(),
                     gradientColorStops?.toFloatArray(),
-                    gradientTileMode.toAndroidTileMode()
+                    TileMode.Clamp.toAndroidTileMode()
                 )
-                if (blurRadiusPx > 0f) {
-                    maskFilter = BlurMaskFilter(blurRadiusPx, blurStyle.toAndroidBlurStyle())
+                if (totalBlurRadiusPx > 0f) {
+                    maskFilter = BlurMaskFilter(totalBlurRadiusPx, blurStyle.toAndroidBlurStyle())
                 }
             }
             val left = -spreadPx + totalOffsetXPx
@@ -210,7 +255,6 @@ private fun rememberGyroParallaxState(sensitivity: Dp): State<Pair<Float, Float>
                         val currentRoll = currentOrientationAngles[2]
 
                         if (baselineOrientation.value == null) {
-                            // Capture baseline on first valid sensor event
                             baselineOrientation.value = floatArrayOf(currentPitch, currentRoll)
                         } else {
                             val basePitch = baselineOrientation.value!![0]
@@ -229,7 +273,6 @@ private fun rememberGyroParallaxState(sensitivity: Dp): State<Pair<Float, Float>
             }
             sensorManager.registerListener(sensorEventListener, rotationSensor, SensorManager.SENSOR_DELAY_UI)
         } else {
-             // No rotation vector sensor, reset baseline if it was somehow set previously
             baselineOrientation.value = null
         }
 
@@ -250,14 +293,5 @@ private fun rememberGyroParallaxState(sensitivity: Dp): State<Pair<Float, Float>
 private fun DrawScope.drawShadowShape(left: Float, top: Float, right: Float, bottom: Float, cornerRadiusPx: Float, paint: AndroidPaint) {
     drawIntoCanvas { canvas ->
         canvas.nativeCanvas.drawRoundRect(left, top, right, bottom, cornerRadiusPx, cornerRadiusPx, paint)
-    }
-}
-
-private fun TileMode.toAndroidTileMode(): AndroidShader.TileMode {
-    return when (this) {
-        TileMode.Clamp -> AndroidShader.TileMode.CLAMP
-        TileMode.Repeated -> AndroidShader.TileMode.REPEAT
-        TileMode.Mirror -> AndroidShader.TileMode.MIRROR
-        else -> AndroidShader.TileMode.CLAMP
     }
 }

@@ -41,15 +41,13 @@ fun InteractiveDropShadowScreen(modifier: Modifier = Modifier) {
     val isInDarkMode = isSystemInDarkTheme()
 
     var isGradientMode by remember { mutableStateOf(false) }
-    
     val defaultSolidColor = if (isInDarkMode) Color.White.copy(alpha = 0.4f) else Color.Black.copy(alpha = 0.4f)
     var shadowColor by remember { mutableStateOf(defaultSolidColor) }
-    
     val gradientColors = listOf(Color.Red.copy(alpha = 0.7f), Color.Blue.copy(alpha = 0.7f))
     var gradientAlpha by remember { mutableFloatStateOf(1.0f) }
 
     var borderRadius by remember { mutableFloatStateOf(16f) }
-    var blurRadius by remember { mutableFloatStateOf(16f) }
+    var blurRadius by remember { mutableFloatStateOf(16f) } // Base blur radius
     var offsetX by remember { mutableFloatStateOf(0f) }
     var offsetY by remember { mutableFloatStateOf(4f) }
     var spread by remember { mutableFloatStateOf(0f) }
@@ -57,6 +55,10 @@ fun InteractiveDropShadowScreen(modifier: Modifier = Modifier) {
     var shadowBlurStyle by remember { mutableStateOf(ShadowBlurStyle.NORMAL) }
     var enableGyroParallax by remember { mutableStateOf(false) }
     var parallaxSensitivity by remember { mutableFloatStateOf(4f) }
+
+    var enableBreathingEffect by remember { mutableStateOf(false) }
+    var breathingIntensity by remember { mutableFloatStateOf(4f) } // Slider value for Dp
+    var breathingDuration by remember { mutableFloatStateOf(1500f) } // Slider value for Millis
 
     Column(
         modifier = modifier
@@ -77,7 +79,10 @@ fun InteractiveDropShadowScreen(modifier: Modifier = Modifier) {
                 spread = spread.dp,
                 blurStyle = shadowBlurStyle,
                 enableGyroParallax = enableGyroParallax,
-                parallaxSensitivity = parallaxSensitivity.dp
+                parallaxSensitivity = parallaxSensitivity.dp,
+                enableBreathingEffect = enableBreathingEffect,
+                breathingEffectIntensity = breathingIntensity.dp,
+                breathingDurationMillis = breathingDuration.toInt()
             )
         } else {
             Modifier.dropShadow(
@@ -89,16 +94,19 @@ fun InteractiveDropShadowScreen(modifier: Modifier = Modifier) {
                 spread = spread.dp,
                 blurStyle = shadowBlurStyle,
                 enableGyroParallax = enableGyroParallax,
-                parallaxSensitivity = parallaxSensitivity.dp
+                parallaxSensitivity = parallaxSensitivity.dp,
+                enableBreathingEffect = enableBreathingEffect,
+                breathingEffectIntensity = breathingIntensity.dp,
+                breathingDurationMillis = breathingDuration.toInt()
             )
         }
 
         Card(
             modifier = dynamicModifier
                 .fillMaxWidth(0.8f)
-                .height(150.dp),
+                .height(180.dp), // Increased height for more text
             shape = RoundedCornerShape(borderRadius.dp),
-            elevation = CardDefaults.cardElevation(0.dp) 
+            elevation = CardDefaults.cardElevation(0.dp)
         ) {
             Column(
                 modifier = Modifier
@@ -113,9 +121,12 @@ fun InteractiveDropShadowScreen(modifier: Modifier = Modifier) {
                     text = if (isGradientMode) "Mode: Gradient" else "Mode: Solid Color",
                     fontSize = 12.sp
                 )
-                Text("Blur: ${blurRadius.roundToInt()}dp, Style: $shadowBlurStyle", fontSize = 12.sp)
+                Text("Base Blur: ${blurRadius.roundToInt()}dp, Style: $shadowBlurStyle", fontSize = 12.sp)
                 if (enableGyroParallax) {
                     Text("Gyro Parallax: Enabled (${parallaxSensitivity.roundToInt()}dp)", fontSize = 12.sp)
+                }
+                if (enableBreathingEffect) {
+                    Text("Breathing Effect: Enabled (Intensity: ${breathingIntensity.roundToInt()}dp, Duration: ${breathingDuration.toInt()}ms)", fontSize = 12.sp)
                 }
             }
         }
@@ -127,17 +138,23 @@ fun InteractiveDropShadowScreen(modifier: Modifier = Modifier) {
         Column(horizontalAlignment = Alignment.Start, verticalArrangement = Arrangement.spacedBy(8.dp)) {
             ControlRow("Gradient Mode:", checkbox = true, checked = isGradientMode, onCheckedChange = { isGradientMode = it })
             ControlRow("Gyro Parallax:", checkbox = true, checked = enableGyroParallax, onCheckedChange = { enableGyroParallax = it })
+            ControlRow("Breathing Effect:", checkbox = true, checked = enableBreathingEffect, onCheckedChange = { enableBreathingEffect = it })
 
             SliderControl("Border Radius: ${borderRadius.roundToInt()}dp", borderRadius, 0f, 50f) { borderRadius = it }
-            SliderControl("Blur Radius: ${blurRadius.roundToInt()}dp", blurRadius, 0f, 50f) { blurRadius = it }
+            SliderControl("Base Blur Radius: ${blurRadius.roundToInt()}dp", blurRadius, 0f, 50f) { blurRadius = it }
             SliderControl("Offset X: ${offsetX.roundToInt()}dp", offsetX, -50f, 50f) { offsetX = it }
             SliderControl("Offset Y: ${offsetY.roundToInt()}dp", offsetY, -50f, 50f) { offsetY = it }
             SliderControl("Spread: ${spread.roundToInt()}dp", spread, 0f, 30f) { spread = it }
+            
             if (isGradientMode) {
                 SliderControl("Gradient Alpha: ${String.format("%.2f", gradientAlpha)}", gradientAlpha, 0f, 1f) { gradientAlpha = it }
             }
             if (enableGyroParallax) {
                 SliderControl("Parallax Sensitivity: ${parallaxSensitivity.roundToInt()}dp", parallaxSensitivity, 0f, 20f) { parallaxSensitivity = it }
+            }
+            if (enableBreathingEffect) {
+                SliderControl("Breathing Intensity: ${breathingIntensity.roundToInt()}dp", breathingIntensity, 0f, 20f) { breathingIntensity = it }
+                SliderControl("Breathing Duration: ${breathingDuration.toInt()}ms", breathingDuration, 500f, 5000f) { breathingDuration = it }
             }
 
             Text("Blur Style:", style = MaterialTheme.typography.bodyMedium)
@@ -159,17 +176,14 @@ fun InteractiveDropShadowScreen(modifier: Modifier = Modifier) {
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
                     val adaptiveBlack = if (isInDarkMode) Color.White.copy(alpha = 0.5f) else Color.Black.copy(alpha = 0.4f)
                     val commonColors = mapOf(
-                        "Default" to adaptiveBlack, // Changed label from "Black"
+                        "Default" to adaptiveBlack,
                         "Red" to Color.Red.copy(alpha = 0.5f),
                         "Blue" to Color.Blue.copy(alpha = 0.5f),
                         "Green" to Color.Green.copy(alpha = 0.6f)
                     )
-                    // Update default selection if it was the old black and theme changed
-                    LaunchedEffect(isInDarkMode) {
-                        if (shadowColor == Color.Black.copy(alpha = 0.4f) && isInDarkMode) {
-                            shadowColor = adaptiveBlack
-                        } else if (shadowColor == Color.White.copy(alpha = 0.5f) && !isInDarkMode) {
-                             shadowColor = adaptiveBlack
+                    LaunchedEffect(isInDarkMode, defaultSolidColor) {
+                        if (shadowColor != defaultSolidColor && (shadowColor == Color.Black.copy(alpha = 0.4f) || shadowColor == Color.White.copy(alpha = 0.5f))) {
+                           shadowColor = defaultSolidColor // Adjust if the theme changed and an old default was selected
                         }
                     }
 
