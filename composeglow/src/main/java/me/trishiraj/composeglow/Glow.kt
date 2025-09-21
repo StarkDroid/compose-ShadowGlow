@@ -72,7 +72,7 @@ fun Modifier.dropShadow(
     enableGyroParallax: Boolean = false,
     parallaxSensitivity: Dp = 4.dp
 ): Modifier = composed {
-    val parallaxOffset = if (enableGyroParallax) rememberGyroParallaxOffset(parallaxSensitivity) else null
+    val parallaxState = if (enableGyroParallax) rememberGyroParallaxState(parallaxSensitivity) else null
 
     this.then(
         Modifier.drawBehind {
@@ -82,12 +82,15 @@ fun Modifier.dropShadow(
             val baseOffsetYPx = offsetY.toPx()
             val shadowBorderRadiusPx = borderRadius.toPx()
 
-            val totalOffsetXPx = baseOffsetXPx + (parallaxOffset?.value?.first ?: 0f)
-            val totalOffsetYPx = baseOffsetYPx + (parallaxOffset?.value?.second ?: 0f)
+            val dynamicOffsetXPx = parallaxState?.value?.first ?: 0f
+            val dynamicOffsetYPx = parallaxState?.value?.second ?: 0f
+
+            val totalOffsetXPx = baseOffsetXPx + dynamicOffsetXPx
+            val totalOffsetYPx = baseOffsetYPx + dynamicOffsetYPx
 
             val shadowColorArgb = color.toArgb()
 
-            if (color.alpha == 0f && blurRadiusPx == 0f && spreadPx == 0f && totalOffsetXPx == baseOffsetXPx && totalOffsetYPx == baseOffsetYPx) {
+            if (color.alpha == 0f && blurRadiusPx == 0f && spreadPx == 0f && dynamicOffsetXPx == 0f && dynamicOffsetYPx == 0f && baseOffsetXPx == 0f && baseOffsetYPx == 0f) {
                 return@drawBehind
             }
 
@@ -131,7 +134,7 @@ fun Modifier.dropShadow(
     enableGyroParallax: Boolean = false,
     parallaxSensitivity: Dp = 4.dp
 ): Modifier = composed {
-    val parallaxOffset = if (enableGyroParallax) rememberGyroParallaxOffset(parallaxSensitivity) else null
+    val parallaxState = if (enableGyroParallax) rememberGyroParallaxState(parallaxSensitivity) else null
 
     this.then(
         Modifier.drawBehind {
@@ -144,8 +147,11 @@ fun Modifier.dropShadow(
             val baseOffsetYPx = offsetY.toPx()
             val shadowBorderRadiusPx = borderRadius.toPx()
 
-            val totalOffsetXPx = baseOffsetXPx + (parallaxOffset?.value?.first ?: 0f)
-            val totalOffsetYPx = baseOffsetYPx + (parallaxOffset?.value?.second ?: 0f)
+            val dynamicOffsetXPx = parallaxState?.value?.first ?: 0f
+            val dynamicOffsetYPx = parallaxState?.value?.second ?: 0f
+
+            val totalOffsetXPx = baseOffsetXPx + dynamicOffsetXPx
+            val totalOffsetYPx = baseOffsetYPx + dynamicOffsetYPx
 
             val actualStartX = gradientStartFactorX * size.width
             val actualStartY = gradientStartFactorY * size.height
@@ -177,57 +183,64 @@ fun Modifier.dropShadow(
 }
 
 @Composable
-private fun rememberGyroParallaxOffset(sensitivity: Dp): State<Pair<Float, Float>> {
+private fun rememberGyroParallaxState(sensitivity: Dp): State<Pair<Float, Float>> {
     val context = LocalContext.current
     val density = LocalDensity.current
     val sensitivityPx = remember(sensitivity) { with(density) { sensitivity.toPx() } }
 
-    val parallaxOffset = remember {
-        mutableStateOf(0f to 0f) // Pair<offsetX, offsetY>
-    }
+    val parallaxOffset = remember { mutableStateOf(0f to 0f) }
+    val baselineOrientation = remember { mutableStateOf<FloatArray?>(null) } // Stores baseline [pitch, roll]
 
     DisposableEffect(context, sensitivityPx) {
         val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
         val rotationSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
+        var sensorEventListener: SensorEventListener? = null
 
-        if (rotationSensor == null) {
-            onDispose {
-                object : DisposableEffectResult {
-                    override fun dispose() {}
-                }
-            }
-            // return@DisposableEffect is not strictly needed here if onDispose is the last statement,
-            // but kept for clarity that no further setup for this effect will occur.
-            // However, the above onDispose block already correctly returns DisposableEffectResult.
-        } else {
-            val sensorListener = object : SensorEventListener {
+        if (rotationSensor != null) {
+            sensorEventListener = object : SensorEventListener {
                 private val rotationMatrix = FloatArray(9)
-                private val orientationAngles = FloatArray(3)
+                private val currentOrientationAngles = FloatArray(3) // For current pitch, roll, azimuth
 
                 override fun onSensorChanged(event: SensorEvent?) {
                     if (event?.sensor?.type == Sensor.TYPE_ROTATION_VECTOR) {
                         SensorManager.getRotationMatrixFromVector(rotationMatrix, event.values)
-                        SensorManager.getOrientation(rotationMatrix, orientationAngles)
+                        SensorManager.getOrientation(rotationMatrix, currentOrientationAngles)
 
-                        val roll = orientationAngles[2]
-                        val pitch = orientationAngles[1]
+                        val currentPitch = currentOrientationAngles[1]
+                        val currentRoll = currentOrientationAngles[2]
 
-                        val newOffsetX = -sin(roll) * sensitivityPx
-                        val newOffsetY = sin(pitch) * sensitivityPx
-                        parallaxOffset.value = newOffsetX to newOffsetY
+                        if (baselineOrientation.value == null) {
+                            // Capture baseline on first valid sensor event
+                            baselineOrientation.value = floatArrayOf(currentPitch, currentRoll)
+                        } else {
+                            val basePitch = baselineOrientation.value!![0]
+                            val baseRoll = baselineOrientation.value!![1]
+
+                            val deltaPitch = currentPitch - basePitch
+                            val deltaRoll = currentRoll - baseRoll
+
+                            val newOffsetX = -sin(deltaRoll) * sensitivityPx
+                            val newOffsetY = sin(deltaPitch) * sensitivityPx
+                            parallaxOffset.value = newOffsetX to newOffsetY
+                        }
                     }
                 }
                 override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
             }
+            sensorManager.registerListener(sensorEventListener, rotationSensor, SensorManager.SENSOR_DELAY_UI)
+        } else {
+             // No rotation vector sensor, reset baseline if it was somehow set previously
+            baselineOrientation.value = null
+        }
 
-            sensorManager.registerListener(sensorListener, rotationSensor, SensorManager.SENSOR_DELAY_UI)
-
-            onDispose {
-                sensorManager.unregisterListener(sensorListener)
-                parallaxOffset.value = 0f to 0f
-                object : DisposableEffectResult {
-                    override fun dispose() {}
-                }
+        onDispose {
+            sensorEventListener?.let {
+                sensorManager.unregisterListener(it)
+            }
+            parallaxOffset.value = 0f to 0f // Reset offset
+            baselineOrientation.value = null // Reset baseline
+            object : DisposableEffectResult {
+                override fun dispose() {}
             }
         }
     }
