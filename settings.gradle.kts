@@ -21,4 +21,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "Glow Sample"
 include(":app")
-include(":composeglow")
+include(":shadowglow")

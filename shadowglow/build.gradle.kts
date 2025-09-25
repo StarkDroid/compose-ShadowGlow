@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "me.trishiraj.composeglow"
+    namespace = "me.trishiraj.shadowglow"
     compileSdk = 36
 
     defaultConfig {

@@ -1,4 +1,4 @@
-package me.trishiraj.composeglow
+package me.trishiraj.shadowglow
 
 import android.content.Context
 import android.graphics.BlurMaskFilter
@@ -85,7 +85,7 @@ private fun rememberAnimatedBreathingValue(
  * @param breathingDurationMillis The duration for one full cycle of the breathing animation.
  * @return A [Modifier] that applies the drop shadow effect.
  */
-fun Modifier.dropShadow(
+fun Modifier.shadowGlow(
     color: Color = Color.Black.copy(alpha = 0.4f),
     borderRadius: Dp = 0.dp,
     blurRadius: Dp = 8.dp,
@@ -151,7 +151,7 @@ fun Modifier.dropShadow(
  * Applies a drop shadow effect to the composable using a linear gradient.
  * (Gyro parallax and breathing effect parameters documented as above)
  */
-fun Modifier.dropShadow(
+fun Modifier.shadowGlow(
     gradientColors: List<Color>,
     gradientStartFactorX: Float = 0f,
     gradientStartFactorY: Float = 0f,

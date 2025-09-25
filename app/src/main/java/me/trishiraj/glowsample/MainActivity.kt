@@ -17,8 +17,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import me.trishiraj.composeglow.ShadowBlurStyle
-import me.trishiraj.composeglow.dropShadow
+import me.trishiraj.shadowglow.ShadowBlurStyle
+import me.trishiraj.shadowglow.shadowGlow
 import me.trishiraj.glowsample.ui.theme.GlowSampleTheme
 import kotlin.math.roundToInt
 
@@ -47,7 +47,7 @@ fun InteractiveDropShadowScreen(modifier: Modifier = Modifier) {
     var gradientAlpha by remember { mutableFloatStateOf(1.0f) }
 
     var borderRadius by remember { mutableFloatStateOf(16f) }
-    var blurRadius by remember { mutableFloatStateOf(16f) } // Base blur radius
+    var blurRadius by remember { mutableFloatStateOf(16f) }
     var offsetX by remember { mutableFloatStateOf(0f) }
     var offsetY by remember { mutableFloatStateOf(4f) }
     var spread by remember { mutableFloatStateOf(0f) }
@@ -57,8 +57,8 @@ fun InteractiveDropShadowScreen(modifier: Modifier = Modifier) {
     var parallaxSensitivity by remember { mutableFloatStateOf(4f) }
 
     var enableBreathingEffect by remember { mutableStateOf(false) }
-    var breathingIntensity by remember { mutableFloatStateOf(4f) } // Slider value for Dp
-    var breathingDuration by remember { mutableFloatStateOf(1500f) } // Slider value for Millis
+    var breathingIntensity by remember { mutableFloatStateOf(4f) }
+    var breathingDuration by remember { mutableFloatStateOf(1500f) }
 
     Column(
         modifier = modifier
@@ -69,7 +69,7 @@ fun InteractiveDropShadowScreen(modifier: Modifier = Modifier) {
     ) {
 
         val dynamicModifier = if (isGradientMode) {
-            Modifier.dropShadow(
+            Modifier.shadowGlow(
                 gradientColors = gradientColors,
                 alpha = gradientAlpha,
                 borderRadius = borderRadius.dp,
@@ -85,7 +85,7 @@ fun InteractiveDropShadowScreen(modifier: Modifier = Modifier) {
                 breathingDurationMillis = breathingDuration.toInt()
             )
         } else {
-            Modifier.dropShadow(
+            Modifier.shadowGlow(
                 color = shadowColor,
                 borderRadius = borderRadius.dp,
                 blurRadius = blurRadius.dp,
@@ -104,7 +104,7 @@ fun InteractiveDropShadowScreen(modifier: Modifier = Modifier) {
         Card(
             modifier = dynamicModifier
                 .fillMaxWidth(0.8f)
-                .height(180.dp), // Increased height for more text
+                .height(180.dp),
             shape = RoundedCornerShape(borderRadius.dp),
             elevation = CardDefaults.cardElevation(0.dp)
         ) {
@@ -147,7 +147,7 @@ fun InteractiveDropShadowScreen(modifier: Modifier = Modifier) {
             SliderControl("Spread: ${spread.roundToInt()}dp", spread, 0f, 30f) { spread = it }
             
             if (isGradientMode) {
-                SliderControl("Gradient Alpha: ${String.format("%.2f", gradientAlpha)}", gradientAlpha, 0f, 1f) { gradientAlpha = it }
+                SliderControl("Gradient Alpha: ${"%.2f".format(gradientAlpha)}", gradientAlpha, 0f, 1f) { gradientAlpha = it }
             }
             if (enableGyroParallax) {
                 SliderControl("Parallax Sensitivity: ${parallaxSensitivity.roundToInt()}dp", parallaxSensitivity, 0f, 20f) { parallaxSensitivity = it }
@@ -183,7 +183,7 @@ fun InteractiveDropShadowScreen(modifier: Modifier = Modifier) {
                     )
                     LaunchedEffect(isInDarkMode, defaultSolidColor) {
                         if (shadowColor != defaultSolidColor && (shadowColor == Color.Black.copy(alpha = 0.4f) || shadowColor == Color.White.copy(alpha = 0.5f))) {
-                           shadowColor = defaultSolidColor // Adjust if the theme changed and an old default was selected
+                           shadowColor = defaultSolidColor
                         }
                     }
 
