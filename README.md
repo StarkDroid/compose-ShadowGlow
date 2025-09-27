@@ -1,20 +1,16 @@
 # ShadowGlow: Advanced Drop Shadows for Jetpack Compose
 
 <!-- Banner Placeholder -->
-<!-- ![ShadowGlow Banner](https://example.com/path/to/your/banner.png) -->
-<!-- You can create a visually appealing banner showcasing different shadow effects -->
+![ShadowGlow Banner](static/banner.png)
 
-[![Maven Central](https://img.shields.io/maven-central/v/me.trishiraj.shadowglow/shadowglow.svg?label=Maven%20Central)](https://search.maven.org/search?q=g:me.trishiraj.shadowglow%20a:shadowglow)
+[![Maven Central Version](https://img.shields.io/maven-central/v/me.trishiraj/shadowglow)](https://central.sonatype.com/artifact/me.trishiraj/shadowglow)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 ShadowGlow is a highly customizable Jetpack Compose library designed to elevate your UI by providing a versatile and easy-to-use `Modifier.shadowGlow()` extension. Create stunning depth, glow, and dynamic visual effects with features like gyroscope-driven parallax and subtle breathing animations.
 
 <!-- Video Demo Placeholder -->
-<!--
 **Watch a Demo!**
-[Link to your YouTube video or GIF showcasing shadowGlow in action]
-(https://www.youtube.com/watch?v=your_video_id_here)
--->
+[shadow-glow-sample.webm](https://github.com/user-attachments/assets/416bda7b-4651-4e1c-b2a1-d7a646af1dde)
 
 ---
 
